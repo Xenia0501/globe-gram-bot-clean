@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import nest_asyncio
 from flask import Flask, request
 
 from telegram import Update, ReplyKeyboardMarkup
@@ -15,10 +16,14 @@ from storage import set_group, get_group, set_user_settings, get_user_settings
 
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
+# --- Инициализация ---
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
 telegram_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+
+nest_asyncio.apply()
+loop = asyncio.get_event_loop()
 
 STYLES = ["дружелюбный", "информационный", "креативный"]
 STYLE, TOPICS, SCHEDULE = range(3)
@@ -132,24 +137,19 @@ telegram_app.add_handler(CommandHandler("settings", settings))
 telegram_app.add_handler(CommandHandler("publish", publish))
 telegram_app.add_handler(CommandHandler("help", help_command))
 
-
-# --- Ручная установка Webhook через URL ---
+# --- Ручная установка Webhook ---
 @app.route("/set_webhook", methods=["GET"])
 def set_webhook_route():
-    async def run():
-        await telegram_app.initialize()
-        await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}")
-    asyncio.run(run())
+    loop.run_until_complete(telegram_app.initialize())
+    loop.run_until_complete(telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}"))
     return f"✅ Webhook установлен на {WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}"
 
-
-# --- Webhook Endpoint ---
+# --- Обработка Webhook от Telegram ---
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
-    async def run():
-        await telegram_app.initialize()
-        await telegram_app.process_update(Update.de_json(request.get_json(force=True), telegram_app.bot))
-    asyncio.run(run())
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    loop.run_until_complete(telegram_app.initialize())
+    loop.run_until_complete(telegram_app.process_update(update))
     return "ok"
 
 @app.route("/")
