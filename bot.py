@@ -2,6 +2,8 @@ import os
 import logging
 from flask import Flask, request
 
+import set_webhook  # ⬅️ добавлено для автоматического вызова webhook
+
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
@@ -13,7 +15,7 @@ from generator.post_generator import generate_full_post
 from storage import set_group, get_group, set_user_settings, get_user_settings
 
 # Telegram Webhook settings
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://your-app.onrender.com
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
 # Flask App
 app = Flask(__name__)
