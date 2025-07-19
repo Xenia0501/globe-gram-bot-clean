@@ -155,3 +155,33 @@ def telegram_webhook():
 @app.route("/")
 def home():
     return "Бот работает!"
+# ... (весь твой оригинальный код выше остаётся без изменений)
+
+from datetime import datetime
+from storage import get_all_user_settings
+
+@app.route("/autopost/batch", methods=["GET"])
+def autopost_batch():
+    now = datetime.now().strftime("%H:%M")
+    all_settings = get_all_user_settings()
+    posts = []
+
+    for user_id_str, data in all_settings.items():
+        schedule = data.get("schedule", "").strip()
+        group_id = data.get("group_id")
+        style = data.get("style")
+        topics = data.get("topics", [])
+        topic = topics[0] if topics else None
+
+        if not schedule or not group_id:
+            continue
+
+        if now in schedule:
+            post = generate_full_post(style=style, topic=topic)
+            posts.append({
+                "chat_id": group_id,
+                "text": post["text"],
+                "image_url": post["image_url"]
+            })
+
+    return jsonify(posts)
