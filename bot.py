@@ -25,7 +25,6 @@ STYLE, TOPICS, SCHEDULE = range(3)
 reply_keyboard = [[s] for s in STYLES]
 markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-
 # --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -36,7 +35,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "3️⃣ В группе введи команду /register\n\n"
         "⚙️ Затем в личке настроишь стиль, темы и расписание через /settings"
     )
-
 
 async def register_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
@@ -51,17 +49,14 @@ async def register_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🌈 Выбери стиль для автопостов:", reply_markup=markup)
     return STYLE
-
 
 async def set_style(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["style"] = update.message.text
     await update.message.reply_text("✏️ Введи темы через запятую (или напиши /skip):")
     return TOPICS
-
 
 async def set_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     topics = [t.strip() for t in update.message.text.split(",") if t.strip()]
@@ -69,12 +64,10 @@ async def set_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏰ Введи расписание (например: каждый день в 10:00):")
     return SCHEDULE
 
-
 async def skip_topics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["topics"] = []
     await update.message.reply_text("⏰ Введи расписание (например: каждый день в 10:00):")
     return SCHEDULE
-
 
 async def set_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     schedule = update.message.text
@@ -86,7 +79,6 @@ async def set_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     })
     await update.message.reply_text("✅ Настройки сохранены! Мы настроим автопостинг по ним.")
     return ConversationHandler.END
-
 
 async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -105,7 +97,6 @@ async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка при публикации: {e}")
 
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "ℹ️ Инструкция по использованию:\n\n"
@@ -116,11 +107,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚙️ Публикация будет выполняться через Make или Zapier по сохранённым настройкам"
     )
 
-
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 Отменено.")
     return ConversationHandler.END
-
 
 # --- Conversation Handler ---
 conv_settings = ConversationHandler(
@@ -143,22 +132,24 @@ telegram_app.add_handler(CommandHandler("settings", settings))
 telegram_app.add_handler(CommandHandler("publish", publish))
 telegram_app.add_handler(CommandHandler("help", help_command))
 
-
-# --- Ручная установка Webhook через URL ---
+# --- Установка webhook вручную ---
 @app.route("/set_webhook", methods=["GET"])
-async def set_webhook_route():
-    await telegram_app.initialize()
-    await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}")
+def set_webhook_route():
+    async def setup():
+        await telegram_app.initialize()
+        await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}")
+    asyncio.run(setup())
     return f"✅ Webhook установлен на {WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}"
 
-
-# --- Webhook Endpoint ---
+# --- Webhook endpoint ---
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
-async def telegram_webhook():
-    await telegram_app.initialize()
-    await telegram_app.process_update(Update.de_json(request.get_json(force=True), telegram_app.bot))
+def telegram_webhook():
+    async def handle():
+        await telegram_app.initialize()
+        update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+        await telegram_app.process_update(update)
+    asyncio.run(handle())
     return "ok"
-
 
 @app.route("/")
 def home():
