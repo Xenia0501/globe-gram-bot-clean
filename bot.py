@@ -132,23 +132,24 @@ telegram_app.add_handler(CommandHandler("settings", settings))
 telegram_app.add_handler(CommandHandler("publish", publish))
 telegram_app.add_handler(CommandHandler("help", help_command))
 
-# --- Установка webhook вручную ---
+
+# --- Ручная установка Webhook через URL ---
 @app.route("/set_webhook", methods=["GET"])
 def set_webhook_route():
-    async def setup():
+    async def run():
         await telegram_app.initialize()
         await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}")
-    asyncio.run(setup())
+    asyncio.run(run())
     return f"✅ Webhook установлен на {WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}"
 
-# --- Webhook endpoint ---
+
+# --- Webhook Endpoint ---
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 def telegram_webhook():
-    async def handle():
+    async def run():
         await telegram_app.initialize()
-        update = Update.de_json(request.get_json(force=True), telegram_app.bot)
-        await telegram_app.process_update(update)
-    asyncio.run(handle())
+        await telegram_app.process_update(Update.de_json(request.get_json(force=True), telegram_app.bot))
+    asyncio.run(run())
     return "ok"
 
 @app.route("/")
