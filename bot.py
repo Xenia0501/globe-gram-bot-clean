@@ -1,25 +1,34 @@
+import os
 import logging
+from flask import Flask, request
+
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    ContextTypes,
-    ConversationHandler,
-    filters,
+    ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
+    ConversationHandler, filters
 )
+
 from config import TELEGRAM_BOT_TOKEN
 from generator.post_generator import generate_full_post
 from storage import set_group, get_group, set_user_settings, get_user_settings
 
+# Telegram Webhook settings
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # https://your-app.onrender.com
+
+# Flask App
+app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
+# Telegram Application
+telegram_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+
+# Constants
 STYLES = ["дружелюбный", "информационный", "креативный"]
 STYLE, TOPICS, SCHEDULE = range(3)
 reply_keyboard = [[s] for s in STYLES]
 markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-# /start
+# Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📩 Привет! Я — тревел-бот и помогу тебе с автопостингом.\n\n"
@@ -30,15 +39,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚙️ Затем в личке настроишь стиль, темы и расписание через /settings"
     )
 
-# /register в группе
 async def register_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
-
     if chat.type not in ["group", "supergroup"]:
         await update.message.reply_text("Команду /register нужно запускать в группе.")
         return
-
     set_group(user.id, chat.id)
     await update.message.reply_text(
         f"✅ Группа зарегистрирована! Теперь я буду публиковать в: `{chat.id}`\n\n"
@@ -46,7 +52,6 @@ async def register_group(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# /settings — сохраняем предпочтения пользователя
 async def settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🌈 Выбери стиль для автопостов:", reply_markup=markup)
     return STYLE
@@ -78,29 +83,23 @@ async def set_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Настройки сохранены! Мы настроим автопостинг по ним.")
     return ConversationHandler.END
 
-# /publish — вызовется вручную или Make/Zapier
 async def publish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     group_id = get_group(user_id)
     settings = get_user_settings(user_id)
-
     if not group_id or not settings:
         await update.message.reply_text("⚠️ Нет зарегистрированной группы или настроек. Используй /register и /settings.")
         return
-
     style = settings.get("style")
     topics = settings.get("topics", [])
-    topic = topics[0] if topics else None  # Берём первую тему, если есть
-
+    topic = topics[0] if topics else None
     post = generate_full_post(style=style, topic=topic)
-
     try:
         await context.bot.send_photo(chat_id=group_id, photo=post["image_url"], caption=post["text"])
         await update.message.reply_text("✅ Пост опубликован в группу.")
     except Exception as e:
         await update.message.reply_text(f"❌ Ошибка при публикации: {e}")
 
-# /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "ℹ️ Инструкция по использованию:\n\n"
@@ -111,37 +110,39 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "⚙️ Публикация будет выполняться через Make или Zapier по сохранённым настройкам"
     )
 
-# /cancel
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 Отменено.")
     return ConversationHandler.END
 
-# MAIN
-def main():
-    app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
+# Conversation handler
+conv_settings = ConversationHandler(
+    entry_points=[CommandHandler("settings", settings)],
+    states={
+        STYLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_style)],
+        TOPICS: [
+            MessageHandler(filters.TEXT & ~filters.COMMAND, set_topics),
+            CommandHandler("skip", skip_topics)
+        ],
+        SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_schedule)]
+    },
+    fallbacks=[CommandHandler("cancel", cancel)]
+)
 
-    conv_settings = ConversationHandler(
-        entry_points=[CommandHandler("settings", settings)],
-        states={
-            STYLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_style)],
-            TOPICS: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, set_topics),
-                CommandHandler("skip", skip_topics)
-            ],
-            SCHEDULE: [MessageHandler(filters.TEXT & ~filters.COMMAND, set_schedule)]
-        },
-        fallbacks=[CommandHandler("cancel", cancel)]
-    )
+# Add all handlers
+telegram_app.add_handler(conv_settings)
+telegram_app.add_handler(CommandHandler("start", start))
+telegram_app.add_handler(CommandHandler("register", register_group))
+telegram_app.add_handler(CommandHandler("settings", settings))
+telegram_app.add_handler(CommandHandler("publish", publish))
+telegram_app.add_handler(CommandHandler("help", help_command))
 
-    app.add_handler(conv_settings)
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("register", register_group))
-    app.add_handler(CommandHandler("settings", settings))
-    app.add_handler(CommandHandler("publish", publish))
-    app.add_handler(CommandHandler("help", help_command))
+# Flask endpoint для Telegram Webhook
+@app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
+async def telegram_webhook():
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    await telegram_app.process_update(update)
+    return "ok"
 
-    print("Бот запущен...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+@app.route("/")
+def home():
+    return "Бот работает!"
