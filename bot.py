@@ -2,8 +2,6 @@ import os
 import logging
 from flask import Flask, request
 
-import set_webhook  # ⬅️ добавлено для автоматического вызова webhook
-
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes,
@@ -14,23 +12,19 @@ from config import TELEGRAM_BOT_TOKEN
 from generator.post_generator import generate_full_post
 from storage import set_group, get_group, set_user_settings, get_user_settings
 
-# Telegram Webhook settings
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Flask App
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Telegram Application
 telegram_app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
-# Constants
 STYLES = ["дружелюбный", "информационный", "креативный"]
 STYLE, TOPICS, SCHEDULE = range(3)
 reply_keyboard = [[s] for s in STYLES]
 markup = ReplyKeyboardMarkup(reply_keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-# Handlers
+# --- Handlers ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📩 Привет! Я — тревел-бот и помогу тебе с автопостингом.\n\n"
@@ -116,7 +110,6 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 Отменено.")
     return ConversationHandler.END
 
-# Conversation handler
 conv_settings = ConversationHandler(
     entry_points=[CommandHandler("settings", settings)],
     states={
@@ -130,7 +123,6 @@ conv_settings = ConversationHandler(
     fallbacks=[CommandHandler("cancel", cancel)]
 )
 
-# Add all handlers
 telegram_app.add_handler(conv_settings)
 telegram_app.add_handler(CommandHandler("start", start))
 telegram_app.add_handler(CommandHandler("register", register_group))
@@ -138,7 +130,7 @@ telegram_app.add_handler(CommandHandler("settings", settings))
 telegram_app.add_handler(CommandHandler("publish", publish))
 telegram_app.add_handler(CommandHandler("help", help_command))
 
-# Flask endpoint для Telegram Webhook
+# Webhook endpoint
 @app.route(f"/{TELEGRAM_BOT_TOKEN}", methods=["POST"])
 async def telegram_webhook():
     update = Update.de_json(request.get_json(force=True), telegram_app.bot)
@@ -148,3 +140,12 @@ async def telegram_webhook():
 @app.route("/")
 def home():
     return "Бот работает!"
+
+# 👇 Добавляем автоматическую установку webhook при первом запросе
+@app.before_first_request
+def setup_webhook():
+    import asyncio
+    async def setup():
+        await telegram_app.bot.set_webhook(f"{WEBHOOK_URL}/{TELEGRAM_BOT_TOKEN}")
+        print("✅ Вебхук установлен автоматически.")
+    asyncio.run(setup())
